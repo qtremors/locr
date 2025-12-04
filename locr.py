@@ -99,9 +99,14 @@ class LocrEngine:
         if name in self.ignore_patterns:
             return True
 
-        rel_path = os.path.relpath(path, self.repo_path)
+        try:
+            rel_path = os.path.relpath(path, self.repo_path)
+        except ValueError:
+            return False
+
         if rel_path == ".":
             return False
+
         rel_path = rel_path.replace(os.sep, "/")
 
         for pattern in self.ignore_patterns:

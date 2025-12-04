@@ -8,10 +8,12 @@
 
 They aren't wrong; Python *is* slower than Rust or Go. But **locr** cheats. Instead of walking through 50,000 files in `node_modules` and then ignoring them (like some tools do), `locr` ignores them *before* it even enters the folder. The result? A Python script that feels like it's written in C (probably).
 
+> ℹ️ **Note:** `locr` is a **heuristic** counter designed for speed and convenience in Python environments. It is currently in **v1.0** and is optimized for standard web and software projects.
+
 ## Features
 
 - **Eager Pruning:** Skips heavy directories (`node_modules`, `venv`, `.git`) instantly. It doesn't waste time scanning files it's just going to ignore.
-- **Git-Aware:** Automatically prioritizes `git check-ignore` to filter files exactly as Git sees them.
+- **Git-Aware:** Parses your root `.gitignore` file to automatically exclude unwanted files (e.g., logs, build artifacts) without needing extra configuration.
 - **Graceful Interrupts:** Caught in a massive scan? Hit `Ctrl+C` to stop immediately and view the **partial results** collected so far.
 - **Smart Colors:** Language-specific row coloring (Python=Yellow, HTML=Red, TypeScript=Blue) for instant visual scanning.
 - **Contextual Output:** Supports saving reports directly into the scanned folder or to a custom path.
@@ -47,14 +49,14 @@ python locr.py [arguments]
 
 How does `locr` stack up against the alternatives?
 
-| Tool | Language | Speed Strategy | Best For... |
+| Tool | Language | Strategy | Best For... |
 | :--- | :--- | :--- | :--- |
-| **`locr`** | Python | **Eager Pruning.** Modifies the walk tree in-place to skip heavy folders immediately. | **Python/Web Devs.** Zero dependencies, usually already installed on your machine. |
-| **`cloc`** | Perl | **Scan & Filter.** Often walks the whole tree first, then subtracts. Can be slow on large `node_modules`. | **Legacy Support.** Supports huge list of obscure languages (COBOL, Fortran). |
-| **`tokei`** | Rust | **Raw Power.** compiled binary speed. | **Maximum Performance.** If you have the Rust toolchain installed. |
-| **`scc`** | Go | **Complexity Analysis.** fast parallel processing. | **Deep Stats.** If you need cyclomatic complexity scores. |
+| **`locr`** | Python | **Eager Pruning.** Skips heavy folders *before* entering them. | **Convenience.** No installation required if you have Python. Perfect for quick checks. |
+| **`cloc`** | Perl | **Scan & Filter.** Walks tree first, filters later. | **Legacy Support.** Supports huge list of obscure languages (COBOL, Fortran). |
+| **`tokei`** | Rust | **Raw Power.** Compiled binary speed. | **Performance.** The gold standard for speed, if you have the Rust toolchain. |
+| **`scc`** | Go | **Complexity Analysis.** Fast parallel processing. | **Deep Stats.** If you need cyclomatic complexity scores. |
 
-**The Bottom Line:** If you have Rust or Go set up, those tools are technically faster on raw I/O. But if you just want a tool that works instantly with the Python you already have installed—without choking on your `node_modules`—`locr` is the move.
+**The Bottom Line:** If you already have Rust or Go tools installed, keep using them—they are technically faster. But if you just want a tool that works *now* with the Python environment you already have, `locr` is the move.
 
 ## Usage & Commands
 
@@ -220,7 +222,13 @@ locr --raw
 
 **No.** `locr` runs 100% locally. You can audit the source code in `locr.py`—it uses standard Python libraries only.
 
-### 6\. Why is the second run faster?
+### 6\. Is the count 100% compiler-accurate?
+**It is a close estimate.** `locr` uses a heuristic "scanner" rather than a full compiler parser.
+* **Pros:** It is blazing fast and supports many languages easily.
+* **Cons:** It might occasionally miscount a comment symbol if it appears inside a string (e.g., `print("Rank #1")`).
+For 99% of use cases, this margin of error is negligible.
+
+### 7\. Why is the second run faster?
 
 Your Operating System caches file locations in RAM after the first run. `locr` takes advantage of this "Warm Cache" to fly through directories instantly on subsequent runs.
 
@@ -293,4 +301,12 @@ Since `locr` relies on your Operating System's RAM cache (Page Cache), you will 
 4.  **You Use a Network Drive:** Scanning files on a NAS or mounted drive (`Z:\`) is limited by network latency, not just disk speed. Caching is often less effective here.
 
 
+## 🚀 Roadmap & Future Improvements
 
+`locr` is an active project. The goal is to maintain the "Zero Dependency" philosophy while improving accuracy and speed.
+
+* **Nested `.gitignore` Support:** Currently, only the root `.gitignore` is respected. Future updates will support recursive ignore files inside subdirectories.
+* **Parallel Processing:** I plan to implement `concurrent.futures` to parallelize file reading, significantly speeding up scans on multi-core machines.
+* **JSON Output:** Adding a `--json` flag to export machine-readable data for use in CI/CD pipelines or dashboards.
+* **Better Tokenization:** Moving from heuristic scanning to a robust tokenizer to better handle edge cases (like comment symbols inside string literals).
+* **Unit Tests:** Adding a comprehensive `unittest` suite to guarantee stability.
