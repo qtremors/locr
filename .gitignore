@@ -1,0 +1,39 @@
+# --- Python Basics ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Distribution / Install Artifacts ---
+# These are created when you run 'pip install -e .'
+*.egg-info/
+.eggs/
+build/
+dist/
+installed_files.txt
+
+# --- Virtual Environments ---
+# Assuming you might use one of these standard names
+venv/
+env/
+.env
+.venv/
+
+# --- IDE Settings ---
+# VS Code
+.vscode/
+# PyCharm / IntelliJ
+.idea/
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
+
+# --- Tool Output ---
+# Ignore the text files your script generates so you don't accidentally commit them
+*_tree.txt
+*_flat_tree.txt
+*_raw.txt
+output.txt
+
+# --- Testing ---
+.pytest_cache/
