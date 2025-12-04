@@ -1,8 +1,17 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [1.1.0] - 2025-12-04
 
-The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
+### Changed
+- **Engine Upgrade**: Switched to a "Hybrid" scanning engine. `locr` now combines eager pruning (skipping junk folders instantly) with `git check-ignore` (asking Git for precise rules).
+- **Accuracy**: The tool now respects complex `.gitignore` rules (like negations and overrides) with 100% parity to Git.
+- **Performance**: Despite the accuracy boost, speed is maintained by eagerly pruning known heavy folders (like `node_modules`) before querying Git.
+
+### Added
+- **Visuals**: Added a spinner animation during scans to indicate activity on large repositories.
+- **UX**: Added graceful `Ctrl+C` interrupt handling.
+
+---
 
 ## [1.0.0] - 2025-12-04
 

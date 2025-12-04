@@ -12,12 +12,12 @@ They aren't wrong; Python *is* slower than Rust or Go. But **locr** cheats. Inst
 
 ## Features
 
-- **Eager Pruning:** Skips heavy directories (`node_modules`, `venv`, `.git`) instantly. It doesn't waste time scanning files it's just going to ignore.
-- **Git-Aware:** Parses your root `.gitignore` file to automatically exclude unwanted files (e.g., logs, build artifacts) without needing extra configuration.
+- **Hybrid Git-Awareness:** Uses a smart 2-phase scanner. It **eagerly prunes** massive junk folders (like `node_modules`) for speed, then queries `git check-ignore` for the remaining files to ensure **100% accuracy** with your `.gitignore` rules (including complex negations).
+- **Eager Pruning:** Instantly skips heavy directories (`node_modules`, `venv`, `.git`) before even asking Git about them. This keeps scans blazing fast even on massive monorepos.
 - **Graceful Interrupts:** Caught in a massive scan? Hit `Ctrl+C` to stop immediately and view the **partial results** collected so far.
 - **Smart Colors:** Language-specific row coloring (Python=Yellow, HTML=Red, TypeScript=Blue) for instant visual scanning.
-- **Contextual Output:** Supports saving reports directly into the scanned folder or to a custom path.
 - **Visual Feedback:** Includes a high-visibility loading spinner that respects terminal performance limits.
+- **Contextual Output:** Supports saving reports directly into the scanned folder or to a custom path.
 - **Zero Dependencies:** Written in pure Python (standard library only).
 
 ## Installation

@@ -52,10 +52,11 @@ import argparse
 import fnmatch
 import itertools
 import os
+import subprocess
 import sys
 import time
 from collections import defaultdict
-from typing import List, Tuple
+from typing import List, Tuple, Set, Optional
 
 # --- IMPORT CONFIG ---
 try:
@@ -73,16 +74,16 @@ class LocrEngine:
     def __init__(self, repo_path: str, raw_mode: bool = False):
         self.repo_path = os.path.abspath(repo_path)
         self.raw_mode = raw_mode
-        self.ignore_patterns = []
         self.was_interrupted = False
-
+        
+        # Load default patterns for "Eager Pruning" (fast skip)
+        self.simple_patterns = []
         if not self.raw_mode:
-            self.ignore_patterns = self._load_gitignore_patterns()
+            self.simple_patterns = self._load_default_patterns()
 
-    def _load_gitignore_patterns(self) -> List[str]:
-        # Start with the defaults from config
+    def _load_default_patterns(self) -> List[Tuple[str, bool, bool]]:
+        # Load defaults + root .gitignore for the "fast prune" phase
         patterns = DEFAULT_IGNORE_PATTERNS[:]
-
         gitignore_path = os.path.join(self.repo_path, ".gitignore")
         if os.path.exists(gitignore_path):
             try:
@@ -93,31 +94,111 @@ class LocrEngine:
                             patterns.append(line)
             except PermissionError:
                 pass
-        return patterns
+        
+        # Compile them for fnmatch
+        compiled = []
+        for raw in patterns:
+            p = raw.strip()
+            is_dir = p.endswith("/")
+            if is_dir: p = p[:-1]
+            anchored = p.startswith("/")
+            if anchored: p = p[1:]
+            p = p.replace("\\", "/")
+            compiled.append((p, is_dir, anchored))
+        return compiled
 
-    def _is_ignored(self, name: str, path: str) -> bool:
-        if name in self.ignore_patterns:
-            return True
-
-        try:
-            rel_path = os.path.relpath(path, self.repo_path)
-        except ValueError:
-            return False
-
-        if rel_path == ".":
-            return False
-
-        rel_path = rel_path.replace(os.sep, "/")
-
-        for pattern in self.ignore_patterns:
-            clean_pat = pattern.rstrip("/")
-            if fnmatch.fnmatch(name, clean_pat) or fnmatch.fnmatch(rel_path, clean_pat):
-                return True
-            if pattern.endswith("/") and (
-                rel_path.startswith(pattern) or f"/{pattern}" in f"/{rel_path}"
-            ):
-                return True
+    def _simple_gitignore_match(self, relpath: str, patterns: List[Tuple[str, bool, bool]]) -> bool:
+        if not patterns: return False
+        for pat, is_dir, anchored in patterns:
+            if anchored:
+                if fnmatch.fnmatch(relpath, pat) or fnmatch.fnmatch(relpath, pat + "/"):
+                    return (relpath == pat or relpath.startswith(pat + "/")) if is_dir else True
+            elif fnmatch.fnmatch(relpath, pat) or fnmatch.fnmatch(os.path.basename(relpath), pat):
+                return (relpath == pat or relpath.startswith(pat + "/")) if is_dir else True
         return False
+
+    def _is_git_repo(self) -> bool:
+        return os.path.isdir(os.path.join(self.repo_path, ".git"))
+
+    def _git_check_ignore(self, relpaths: List[str]) -> Set[str]:
+        if not relpaths: return set()
+        try:
+            # Batch query Git for accuracy
+            input_bytes = "\0".join(relpaths).encode("utf-8")
+            proc = subprocess.run(
+                ["git", "check-ignore", "--stdin", "-z"],
+                input=input_bytes,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                cwd=self.repo_path,
+                timeout=15, # Generous timeout for large repos
+            )
+            if proc.returncode not in (0, 1) or not proc.stdout:
+                return set()
+            parts = [p.decode("utf-8") for p in proc.stdout.split(b"\0") if p]
+            return set(parts)
+        except Exception:
+            return set()
+
+    def _collect_and_filter_files(self, callback=None) -> List[str]:
+        """
+        Phase 1: Collect all files, but eager-prune junk folders.
+        Phase 2: Use Git to filter the survivors.
+        """
+        all_rel_paths = []
+        
+        # --- PHASE 1: WALK & PRUNE ---
+        try:
+            for dirpath, dirnames, filenames in os.walk(self.repo_path, topdown=True):
+                if callback: callback()
+                
+                rel_dir = os.path.relpath(dirpath, self.repo_path)
+                if rel_dir == ".": rel_dir = ""
+                else: rel_dir = rel_dir.replace(os.sep, "/")
+
+                if not self.raw_mode:
+                    # Eager Pruning: Remove directories that match simple patterns
+                    # This prevents us from walking into node_modules or .git
+                    active_dirs = []
+                    for d in dirnames:
+                        if d == ".git": continue
+                        path_to_check = (rel_dir + "/" + d) if rel_dir else d
+                        if not self._simple_gitignore_match(path_to_check, self.simple_patterns):
+                            active_dirs.append(d)
+                    dirnames[:] = active_dirs
+
+                for f in filenames:
+                    # Basic extension check (optimization: don't track binary files)
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext not in LANGUAGES:
+                        continue
+                        
+                    rel_path = (rel_dir + "/" + f if rel_dir else f).replace(os.sep, "/")
+                    
+                    if not self.raw_mode and self._simple_gitignore_match(rel_path, self.simple_patterns):
+                        continue
+                        
+                    all_rel_paths.append(rel_path)
+
+        except KeyboardInterrupt:
+            self.was_interrupted = True
+            return []
+
+        if self.raw_mode or not all_rel_paths:
+            return all_rel_paths
+
+        # --- PHASE 2: GIT ACCURACY ---
+        final_list = []
+        ignored_by_git = set()
+        
+        if self._is_git_repo():
+            ignored_by_git = self._git_check_ignore(all_rel_paths)
+            
+        for p in all_rel_paths:
+            if p not in ignored_by_git:
+                final_list.append(p)
+                
+        return final_list
 
     def scan(self, callback=None) -> dict:
         results = defaultdict(
@@ -132,33 +213,27 @@ class LocrEngine:
         self.was_interrupted = False
 
         try:
-            for dirpath, dirnames, filenames in os.walk(self.repo_path, topdown=True):
-                if callback:
-                    callback()
+            # Step 1: Get the clean list of files (Pruned + Git Verified)
+            valid_files = self._collect_and_filter_files(callback)
 
-                if not self.raw_mode:
-                    dirnames[:] = [
-                        d
-                        for d in dirnames
-                        if not self._is_ignored(d, os.path.join(dirpath, d))
-                    ]
+            # Step 2: Analyze them
+            for rel_path in valid_files:
+                if self.was_interrupted: break
+                if callback: callback()
 
-                for file in filenames:
-                    full_path = os.path.join(dirpath, file)
-                    if not self.raw_mode and self._is_ignored(file, full_path):
-                        continue
+                full_path = os.path.join(self.repo_path, rel_path)
+                ext = os.path.splitext(rel_path)[1].lower()
+                
+                if ext in LANGUAGES:
+                    lang_def = LANGUAGES[ext]
+                    b, c, k = self._analyze_file(full_path, lang_def)
 
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in LANGUAGES:
-                        lang_def = LANGUAGES[ext]
-                        b, c, k = self._analyze_file(full_path, lang_def)
-
-                        name = lang_def["name"]
-                        results[name]["files"] += 1
-                        results[name]["blank"] += b
-                        results[name]["comment"] += c
-                        results[name]["code"] += k
-                        results[name]["color"] = lang_def.get("color", Colors.WHITE)
+                    name = lang_def["name"]
+                    results[name]["files"] += 1
+                    results[name]["blank"] += b
+                    results[name]["comment"] += c
+                    results[name]["code"] += k
+                    results[name]["color"] = lang_def.get("color", Colors.WHITE)
 
         except KeyboardInterrupt:
             self.was_interrupted = True
@@ -321,18 +396,21 @@ def main():
 
     start_time = time.time()
 
-    try:
-        if spinner_active:
-            sys.stdout.write(Colors.HIDE_CURSOR)
+    if spinner_active:
+        sys.stdout.write(Colors.HIDE_CURSOR)
 
+    try:
         engine = LocrEngine(target_path, raw_mode=args.raw)
         results = engine.scan(callback=update_spinner)
-
+        
         if spinner_active:
             sys.stdout.write(f"\r{' ' * (len(msg) + 5)}\r")
             sys.stdout.flush()
 
     except Exception as e:
+        if spinner_active:
+            sys.stdout.write(f"\r{' ' * (len(msg) + 5)}\r")
+            sys.stdout.flush()
         print(f"\nError: {e}")
         sys.exit(1)
     finally:
