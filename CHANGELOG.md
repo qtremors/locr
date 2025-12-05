@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0] - 2025-12-05
+
+### Added
+- **Statistics Mode**: Added `--stats` (`-s`) flag. This provides a detailed breakdown including:
+    - **Density %**: What percentage of a language is comments vs. code.
+    - **Share %**: What percentage of the total project files belong to a specific language.
+- **Responsive UI**: The report table now dynamically calculates separator line widths based on your terminal size (using `shutil`), preventing ugly formatting on wide monitors.
+
+### Changed
+- **Output Formatting**: Added cleaner spacing, including a blank line footer.
+- **Default View**: The default output remains the "Clean" view (numbers only) to preserve readability.
+
+### Fixed
+- **Visual Artifacts**: Fixed an issue where the loading spinner would leave "ghost text" fragments behind when scanning completed or was interrupted.
+
+---
+
 ## [1.1.0] - 2025-12-04
 
 ### Changed

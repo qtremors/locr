@@ -6,7 +6,7 @@ A blazing fast, dependency-free lines of code counter.
 Generates a language-wise breakdown of code, comments, and blank lines.
 
 Behavioral Notes:
-  - By default, output is plain text (monochrome). Use --color for syntax highlighting.
+  - Uses a "Hybrid" engine: Prunes heavy folders eagerly, then uses Git for 100% accuracy.
   - Automatically respects .gitignore rules (prioritizes `git check-ignore`).
   - Eagerly prunes ignored directories (e.g., node_modules) for maximum speed.
   - Ignores binary files and .git folder contents automatically.
@@ -15,6 +15,7 @@ Arguments:
   path          : Target directory (absolute or relative).
                   Defaults to current directory (.) if omitted.
   -c, --color   : Enable colored output in the terminal.
+  -s, --stats   : Show percentage statistics (Share % and Density %).
   --raw         : "Raw" mode. Ignores .gitignore rules and counts EVERYTHING.
   -o, --out     : Output file behavior:
                   - [No value]: Save to '[folder]_locr.txt' INSIDE the scanned folder.
@@ -22,36 +23,46 @@ Arguments:
 
 Commands:
 
-    # --- Basic Usage ---
+    # --- Basic Usage (Clean View) ---
     # Scan current directory
     locr
     python locr.py
+
+    # Scan a specific folder
+    locr src
+    python locr.py src
 
     # Scan a specific folder with Color
     locr src --color
     python locr.py src -c
 
+    # --- Detailed Statistics (With %) ---
+    # Show percentages for file share and comment density
+    locr --stats
+    locr -s
+
+    # Combine with specific targets
+    locr src -s
+    python locr.py src --stats
+
     # --- Output to File ---
-    # Scan 'src' and save to 'src/src_locr.txt'
+    # Save clean report to 'src_locr.txt'
     locr src -o
-    python locr.py src -o
-
-    # Scan current dir and save to 'current_folder_locr.txt'
-    locr -o
-    python locr.py -o
-
-    # Scan 'src' but save to a specific file in current location
-    locr src -o my_report.txt
-    python locr.py src -o my_report.txt
+    
+    # Save DETAILED stats to a file
+    locr src -s -o stats_report.txt
 
     # --- Raw / Debug Mode ---
-    locr --raw
+    # Scan everything (including ignored files) with stats
+    locr --raw -s
+    python locr.py --raw --stats
 """
 
 import argparse
 import fnmatch
 import itertools
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -281,7 +292,7 @@ class LocrEngine:
 
 
 def generate_report(
-    results: dict, elapsed_time: float, use_color: bool, interrupted: bool
+    results: dict, elapsed_time: float, use_color: bool, interrupted: bool, show_stats: bool
 ) -> List[str]:
     lines = []
 
@@ -298,44 +309,98 @@ def generate_report(
     if not results:
         return lines + ["No code files found."]
 
-    sorted_stats = sorted(results.items(), key=lambda x: x[1]["code"], reverse=True)
-    totals = {"files": 0, "blank": 0, "comment": 0, "code": 0}
-    for _, s in sorted_stats:
-        totals["files"] += s["files"]
-        totals["blank"] += s["blank"]
-        totals["comment"] += s["comment"]
-        totals["code"] += s["code"]
+    # 1. Pre-calculate Totals
+    total_files = 0
+    total_blank = 0
+    total_comment = 0
+    total_code = 0
+    
+    for s in results.values():
+        total_files += s["files"]
+        total_blank += s["blank"]
+        total_comment += s["comment"]
+        total_code += s["code"]
+        
+    grand_total_lines = total_blank + total_comment + total_code
+    safe_total_files = total_files if total_files > 0 else 1
 
-    sep = "=" * 75
-    thin_sep = "-" * 75
+    sorted_stats = sorted(results.items(), key=lambda x: x[1]["code"], reverse=True)
+
+    # 2. Determine Widths based on Content (Not Terminal)
+    if show_stats:
+        # Stats View: 20 + 1 + 12 + 1 + 14 + 1 + 14 + 1 + 14 = 78 chars
+        content_width = 78
+        header_fmt = "{:<20} {:>12} {:>14} {:>14} {:>14}"
+        row_fmt    = "{:<20} {:>12} {:>14} {:>14} {:>14}"
+    else:
+        # Clean View: 22 + 1 + 10 + 1 + 12 + 1 + 12 + 1 + 12 = 72 chars
+        content_width = 72
+        header_fmt = "{:<22} {:>10} {:>12} {:>12} {:>12}"
+    
+    sep = "=" * content_width
+    thin_sep = "-" * content_width
 
     lines.append("")
     lines.append(Colors.style(sep, Colors.WHITE, use_color))
-    lines.append(
-        Colors.style(
-            f"{'Language':<22} {'Files':>10} {'Blank':>12} {'Comment':>12} {'Code':>12}",
-            Colors.BOLD,
-            use_color,
-        )
-    )
-    lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
 
-    for lang, s in sorted_stats:
-        row_text = f"{lang:<22} {s['files']:>10} {s['blank']:>12} {s['comment']:>12} {s['code']:>12}"
-        lines.append(Colors.style(row_text, s["color"], use_color))
+    # 3. Build Table
+    if show_stats:
+        # === DETAILED VIEW (WITH %) ===
+        lines.append(Colors.style(header_fmt.format("Language", "Files", "Blank", "Comment", "Code"), Colors.BOLD, use_color))
+        lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
 
-    lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
-    lines.append(
-        Colors.style(
-            f"{'TOTAL':<22} {totals['files']:>10} {totals['blank']:>12} {totals['comment']:>12} {totals['code']:>12}",
-            Colors.BOLD,
-            use_color,
-        )
-    )
+        for lang, s in sorted_stats:
+            l_lines = s["blank"] + s["comment"] + s["code"]
+            safe_lines = l_lines if l_lines > 0 else 1
+            
+            f_pct = (s["files"] / safe_total_files) * 100
+            b_pct = (s["blank"] / safe_lines) * 100
+            c_pct = (s["comment"] / safe_lines) * 100
+            k_pct = (s["code"] / safe_lines) * 100
+            
+            lines.append(Colors.style(row_fmt.format(
+                lang, 
+                f"{s['files']} ({f_pct:.0f}%)", 
+                f"{s['blank']} ({b_pct:.0f}%)", 
+                f"{s['comment']} ({c_pct:.0f}%)", 
+                f"{s['code']} ({k_pct:.0f}%)"
+            ), s["color"], use_color))
+            
+        # Global Totals
+        safe_global = grand_total_lines if grand_total_lines > 0 else 1
+        gt_b_pct = (total_blank / safe_global) * 100
+        gt_c_pct = (total_comment / safe_global) * 100
+        gt_k_pct = (total_code / safe_global) * 100
+        
+        lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
+        lines.append(Colors.style(row_fmt.format(
+            "TOTAL", 
+            f"{total_files} (100%)", 
+            f"{total_blank} ({gt_b_pct:.0f}%)", 
+            f"{total_comment} ({gt_c_pct:.0f}%)", 
+            f"{total_code} ({gt_k_pct:.0f}%)"
+        ), Colors.BOLD, use_color))
+
+    else:
+        # === SIMPLE VIEW (NO %) ===
+        lines.append(Colors.style(header_fmt.format("Language", "Files", "Blank", "Comment", "Code"), Colors.BOLD, use_color))
+        lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
+
+        for lang, s in sorted_stats:
+            lines.append(Colors.style(header_fmt.format(
+                lang, s['files'], s['blank'], s['comment'], s['code']
+            ), s["color"], use_color))
+
+        lines.append(Colors.style(thin_sep, Colors.WHITE, use_color))
+        lines.append(Colors.style(header_fmt.format(
+            "TOTAL", total_files, total_blank, total_comment, total_code
+        ), Colors.BOLD, use_color))
+
+    # --- FOOTER ---
     lines.append(Colors.style(sep, Colors.WHITE, use_color))
-
-    time_str = f"Processed {totals['files']} files in {elapsed_time:.3f} seconds."
+    time_str = f"Processed {total_files} files in {elapsed_time:.3f} seconds."
     lines.append(Colors.style(time_str, Colors.CYAN, use_color))
+    lines.append("")
 
     return lines
 
@@ -361,6 +426,7 @@ def main():
     p.add_argument("--color", "-c", action="store_true", help="Enable colored output")
     p.add_argument("--raw", action="store_true", help="Ignore .gitignore rules")
     p.add_argument("--out", "-o", nargs="?", const=True, help="Write output to file")
+    p.add_argument("--stats", "-s", action="store_true", help="Show percentage statistics")
 
     args = p.parse_args()
     target_path = os.path.abspath(args.path)
@@ -404,12 +470,14 @@ def main():
         results = engine.scan(callback=update_spinner)
         
         if spinner_active:
-            sys.stdout.write(f"\r{' ' * (len(msg) + 5)}\r")
+            w = shutil.get_terminal_size().columns
+            sys.stdout.write(f"\r{' ' * (w - 1)}\r")
             sys.stdout.flush()
 
     except Exception as e:
         if spinner_active:
-            sys.stdout.write(f"\r{' ' * (len(msg) + 5)}\r")
+            w = shutil.get_terminal_size().columns
+            sys.stdout.write(f"\r{' ' * (w - 1)}\r")
             sys.stdout.flush()
         print(f"\nError: {e}")
         sys.exit(1)
@@ -420,14 +488,22 @@ def main():
     end_time = time.time()
 
     report_lines = generate_report(
-        results, end_time - start_time, use_color, engine.was_interrupted
-    )
+        results, 
+        end_time - start_time, 
+        use_color, 
+        engine.was_interrupted,
+        show_stats=args.stats
+)
 
     if is_writing_file:
         filename = auto_out_name(target_path) if args.out is True else args.out
         try:
             clean_lines = generate_report(
-                results, end_time - start_time, False, engine.was_interrupted
+                results, 
+                end_time - start_time, 
+                False, 
+                engine.was_interrupted,
+                show_stats=args.stats
             )
             with open(filename, "w", encoding="utf-8") as f:
                 f.write("\n".join(clean_lines) + "\n")

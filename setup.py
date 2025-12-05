@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="locr",
-    version="1.1.0",
+    version="1.2.0",
     py_modules=["locr", "locr_config"],
     install_requires=[],  # Add dependencies here if need to add external libs later
     entry_points={

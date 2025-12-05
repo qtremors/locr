@@ -66,6 +66,7 @@ How does `locr` stack up against the alternatives?
 |---|---|---|
 | `path` | | **Target Directory.** Defaults to current directory (`.`) if omitted. |
 | `--color` | `-c` | **Enable Color.** Turn on language-specific syntax highlighting. |
+| `--stats` | `-s` | **Show Statistics.** Display percentage breakdowns for comment density and file share. |
 | `--out` | `-o` | **Save to file.** <br>1. **No Value:** Save to `[folder]_locr.txt` INSIDE the scanned folder.<br>2. **Filename:** Save to a specific file in the current directory. |
 | `--raw` | | **Raw Mode.** Ignore `.gitignore` rules and count EVERYTHING. |
 
@@ -83,24 +84,24 @@ locr
 
 ```
 ===========================================================================
-Language                    Files        Blank      Comment         Code
+Language                    Files        Blank      Comment         Code
 ---------------------------------------------------------------------------
-JSON                            5            4            0         4717
-TypeScript TSX                 21          257           19         2256
-Python                         11           86           40          623
-TypeScript                      7           36           14          239
-Markdown                        1           91            0           99
-CSS                             2           15            7           99
-JavaScript                      3            1            1           48
-HTML                            1            0            0           13
-TOML                            1            0            0           11
+JSON                            5            4            0         4717
+TypeScript TSX                 21          257           19         2256
+Python                         11           86           40          623
+TypeScript                      7           36           14          239
+Markdown                        1           91            0           99
+CSS                             2           15            7           99
+JavaScript                      3            1            1           48
+HTML                            1            0            0           13
+TOML                            1            0            0           11
 ---------------------------------------------------------------------------
-TOTAL                          52          490           81         8105
+TOTAL                          52          490           81         8105
 ===========================================================================
 Processed 52 files in 0.032 seconds.
 ```
 
-#### 2\. Colored Scan
+#### 2. Colored Scan
 
 Scans a specific folder (`src`) with syntax highlighting enabled.
 
@@ -108,9 +109,9 @@ Scans a specific folder (`src`) with syntax highlighting enabled.
 locr src --color
 ```
 
-#### 3\. Save to File (Auto-Location)
+#### 3. Save to File (Auto-Location)
 
-Scans the `frontend` folder and saves the report *inside* that folder.
+Scans the `frontend` folder and saves the report _inside_ that folder.
 
 ```bash
 locr frontend -o
@@ -122,7 +123,30 @@ locr frontend -o
 Output written to: Z:\Projects\MyApp\frontend\frontend_locr.txt
 ```
 
-#### 4\. Raw Mode (Debug)
+#### 4. Detailed Statistics (Percentages)
+
+Use the `-s` flag to see the composition of your codebase, including comment density and file share percentages.
+
+```bash
+locr --stats
+```
+
+**Expected Output:**
+
+```
+===========================================================================
+Language                    Files          Blank        Comment        Code
+---------------------------------------------------------------------------
+Python                  15 (30%)     120 (10%)      240 (20%)      840 (70%)
+HTML                    20 (40%)      50 ( 5%)        0 ( 0%)      950 (95%)
+JavaScript              15 (30%)       5 ( 5%)       10 (10%)       85 (85%)
+---------------------------------------------------------------------------
+TOTAL                   50 (100%)    175 ( 9%)      250 (13%)     1875 (78%)
+===========================================================================
+Processed 50 files in 0.042 seconds.
+```
+
+#### 5. Raw Mode (Debug)
 
 Ignores your `.gitignore` and counts everything (virtual environments, build artifacts, etc).
 
@@ -130,7 +154,7 @@ Ignores your `.gitignore` and counts everything (virtual environments, build art
 locr --raw
 ```
 
-#### 5\. Interrupting a Scan
+#### 6. Interrupting a Scan
 
 If you start scanning a massive monorepo and realize you have enough data, press `Ctrl+C`.
 
@@ -145,18 +169,18 @@ locr giant-repo
 ⚠ Scan interrupted. Showing partial results...
 
 ===========================================================================
-Language                    Files        Blank      Comment         Code
+Language                    Files        Blank      Comment         Code
 ---------------------------------------------------------------------------
-Python                        458         6160         7293        30962
-JavaScript                     88         4680         3970        19377
-CSS                            16          955          114         4145
-HTML                           63          221            0         1686
-YAML                           17           83           10          938
-Markdown                        6           30            0          113
-TOML                            1            8            0           60
-JSON                            1            0            0           19
+Python                        458         6160         7293        30962
+JavaScript                     88         4680         3970        19377
+CSS                            16          955          114         4145
+HTML                           63          221            0         1686
+YAML                           17           83           10          938
+Markdown                        6           30            0          113
+TOML                            1            8            0           60
+JSON                            1            0            0           19
 ---------------------------------------------------------------------------
-TOTAL                         650        12137        11387        57300
+TOTAL                         650        12137        11387        57300
 ===========================================================================
 Processed 650 files in 0.422 seconds.
 ```
@@ -174,6 +198,11 @@ python locr.py
 # Scan a specific folder with Color
 locr src --color
 python locr.py src -c
+
+# --- Detailed Statistics ---
+# Show breakdown of Comment Density % and File Share %
+locr --stats
+locr -s
 
 # --- Output to File ---
 # Scan 'src' and save to 'src/src_locr.txt'
